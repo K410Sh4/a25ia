@@ -2,30 +2,29 @@ package dev.k410.a25ia.core.engine
 
 import dev.k410.a25ia.core.model.InferenceRequest
 import dev.k410.a25ia.core.model.InferenceResult
-import dev.k410.a25ia.core.model.MemoryKind
-import dev.k410.a25ia.core.model.MemoryRole
+import dev.k410.a25ia.core.model.UserIntent
 import kotlin.math.roundToInt
 
 /**
- * Baseline local cognitive backend.
- *
- * It is intentionally honest: this is not an embedded LLM. It provides a fully local,
- * deterministic adaptive baseline with memory, intent routing and configurable style.
- * A model-backed implementation can replace it through [InferenceBackend].
+ * Local deterministic baseline used to validate orchestration, memory and adaptation.
+ * It is intentionally not presented as a neural language model.
  */
 class LocalAdaptiveBackend : InferenceBackend {
-    override val id: String = "adaptive-local-v1"
+    override val id: String = "adaptive-local-v2"
 
     override suspend fun generate(request: InferenceRequest): InferenceResult {
         val start = System.nanoTime()
         val text = compose(request)
         val elapsedMs = (System.nanoTime() - start) / 1_000_000
+
         return InferenceResult(
             text = text,
             backendId = id,
             latencyMs = elapsedMs,
             diagnostics = mapOf(
-                "memory_hits" to request.memories.size.toString(),
+                "long_term_memory_hits" to request.memories.size.toString(),
+                "session_turns" to request.sessionContext.size.toString(),
+                "intent" to request.intent.name,
                 "prompt_chars" to PromptAssembler.build(request).length.toString(),
                 "backend" to id,
             ),
@@ -34,28 +33,9 @@ class LocalAdaptiveBackend : InferenceBackend {
 
     private fun compose(request: InferenceRequest): String {
         val message = request.userMessage.trim()
-        val lower = message.lowercase()
         val settings = request.settings
-        val p = settings.personality
-
-        val facts = request.memories
-            .filter { it.kind == MemoryKind.FACT && it.role == MemoryRole.USER }
-            .map { it.text }
-            .distinct()
-
-        val greeting = listOf("oi", "olá", "ola", "bom dia", "boa tarde", "boa noite")
-            .any { lower == it || lower.startsWith("$it ") }
-
-        val asksMemory = listOf(
-            "o que você lembra",
-            "o que voce lembra",
-            "lembra de mim",
-            "o que sabe sobre mim",
-            "qual meu nome",
-        ).any(lower::contains)
-
-        val asksIdentity = listOf("quem é você", "quem e voce", "o que você é", "o que voce e")
-            .any(lower::contains)
+        val p = settings.effectivePersonality()
+        val facts = request.memories.map { it.text }.distinct()
 
         val opening = when {
             p.formality > 0.72f -> "Certo."
@@ -64,40 +44,41 @@ class LocalAdaptiveBackend : InferenceBackend {
             else -> ""
         }
 
-        val core = when {
-            greeting ->
-                "Olá. Eu sou ${settings.assistantName}. Minha memória e meu perfil adaptativo estão ativos conforme suas configurações."
-
-            asksIdentity ->
+        val core = when (request.intent) {
+            UserIntent.IDENTITY ->
                 "Eu sou ${settings.assistantName}, o núcleo adaptativo local do A25IA. " +
-                    "Nesta versão eu possuo memória persistente, recuperação de contexto, feedback, " +
-                    "personalidade configurável e autoajuste limitado. Meu backend atual ainda não é um LLM completo."
+                    "Minha arquitetura possui memória de longo prazo separada da sessão, feedback isolado e personalidade configurável. " +
+                    "O backend atual ainda não é um LLM neural completo."
 
-            asksMemory && facts.isNotEmpty() ->
-                "Estas são as memórias factuais mais relevantes que encontrei: " +
-                    facts.take(settings.learning.memoryRetrievalCount).joinToString("; ") + "."
+            UserIntent.MEMORY ->
+                if (facts.isEmpty()) {
+                    "Ainda não tenho fatos ou preferências de longo prazo relevantes registrados sobre você."
+                } else {
+                    "Estas são as memórias de longo prazo que encontrei: " +
+                        facts.take(settings.learning.memoryRetrievalCount).joinToString("; ") + "."
+                }
 
-            asksMemory ->
-                "Ainda não encontrei memórias factuais suficientes sobre você. " +
-                    "Frases como “meu nome é...”, “eu gosto de...” ou “meu objetivo é...” podem ser registradas localmente."
+            UserIntent.CONFIGURATION ->
+                "Você pode alterar identidade, geração, personalidade, memória e aprendizado em Configurações. " +
+                    "A personalidade base agora fica separada dos pequenos ajustes aprendidos por feedback."
 
-            lower.contains("configura") || lower.contains("personalidade") ->
-                "Você pode alterar nome, instrução do sistema, geração, personalidade, memória e aprendizado na aba Configurações. " +
-                    "Os valores são normalizados antes de serem persistidos."
+            UserIntent.GREETING ->
+                "Olá. Eu sou ${settings.assistantName}. A sessão atual e a memória de longo prazo estão separadas para evitar contexto contaminado."
 
-            message.endsWith("?") ->
+            UserIntent.QUESTION ->
                 answerOpenQuestion(message, request)
 
-            else ->
+            UserIntent.STATEMENT ->
                 acknowledge(message, request)
         }
 
         val humorSuffix = if (p.humor > 0.82f && core.length < 260) " 🙂" else ""
-        val initiativeSuffix = if (p.initiative > 0.75f && !asksMemory && !asksIdentity && !greeting) {
-            " Posso usar seu feedback para ajustar meu estilo dentro dos limites configurados."
-        } else {
-            ""
-        }
+        val initiativeSuffix =
+            if (p.initiative > 0.75f && request.intent !in setOf(UserIntent.IDENTITY, UserIntent.MEMORY, UserIntent.GREETING)) {
+                " Seu feedback pode ajustar meu estilo sem alterar sua personalidade base."
+            } else {
+                ""
+            }
 
         return listOf(opening, core + humorSuffix + initiativeSuffix)
             .filter { it.isNotBlank() }
@@ -106,37 +87,33 @@ class LocalAdaptiveBackend : InferenceBackend {
     }
 
     private fun answerOpenQuestion(message: String, request: InferenceRequest): String {
-        val p = request.settings.personality
-        val related = request.memories
-            .filter { it.role == MemoryRole.USER }
-            .take(3)
-
-        val context = if (related.isEmpty()) {
+        val p = request.settings.effectivePersonality()
+        val memoryNote = if (request.memories.isEmpty()) {
             ""
         } else {
-            " Contexto recuperado: " + related.joinToString(" | ") { it.text.take(100) } + "."
+            " Encontrei ${request.memories.size} memória(s) de longo prazo realmente relacionada(s), mas não vou expor contexto interno sem necessidade."
         }
 
         val detail = if (p.verbosity >= 0.55f) {
-            " Eu consigo organizar contexto e memória localmente, mas ainda não devo fingir conhecimento generativo amplo: " +
-                "o próximo backend precisa ser um modelo local real e será comparado por latência, RAM, estabilidade e qualidade."
+            " Meu backend local determinístico ainda não possui conhecimento generativo amplo; " +
+                "ele está servindo como baseline segura para o próximo backend LLM."
         } else {
-            " Meu backend local atual é deliberadamente limitado; não vou inventar uma resposta que ele não consegue sustentar."
+            " Meu backend atual ainda não é um LLM, então não vou inventar a resposta."
         }
 
-        return "Entendi a pergunta “${message.take(180)}”.$context$detail"
+        return "Entendi a pergunta “${message.take(180)}”.$memoryNote$detail"
     }
 
     private fun acknowledge(message: String, request: InferenceRequest): String {
-        val p = request.settings.personality
+        val p = request.settings.effectivePersonality()
         val compact = message.replace(Regex("\\s+"), " ").take(180)
         val style = when {
-            p.creativity > 0.80f -> "Vou incorporar isso ao contexto de forma flexível"
-            p.formality > 0.70f -> "A informação foi incorporada ao contexto disponível"
-            else -> "Vou manter isso no contexto"
+            p.creativity > 0.80f -> "Vou considerar isso no contexto desta sessão"
+            p.formality > 0.70f -> "A informação foi incorporada ao contexto recente da sessão"
+            else -> "Vou manter isso no contexto desta sessão"
         }
-        val confidence = (request.settings.personality.skepticism * 100).roundToInt()
-        val diagnostic = if (p.verbosity > 0.72f) " Perfil de cautela atual: $confidence%." else ""
+        val caution = (p.skepticism * 100).roundToInt()
+        val diagnostic = if (p.verbosity > 0.72f) " Cautela efetiva: $caution%." else ""
         return "$style: “$compact”.$diagnostic"
     }
 }

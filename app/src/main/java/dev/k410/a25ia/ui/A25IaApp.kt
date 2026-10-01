@@ -48,7 +48,9 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.k410.a25ia.core.model.AiSettings
 import dev.k410.a25ia.core.model.FeedbackSignal
+import dev.k410.a25ia.core.model.MemoryKind
 import dev.k410.a25ia.core.model.MemoryRecord
+import dev.k410.a25ia.core.model.PersonalityAdaptation
 import dev.k410.a25ia.core.model.PersonalityPreset
 import dev.k410.a25ia.core.model.percentLabel
 import java.util.Locale
@@ -103,6 +105,8 @@ fun A25IaApp(viewModel: MainViewModel) {
                     )
                     AppTab.MEMORY -> MemoryScreen(
                         memories = state.memories,
+                        sessionTurnCount = state.sessionTurnCount,
+                        feedbackCount = state.feedbackCount,
                         onRefresh = viewModel::refreshMemories,
                         onClear = viewModel::clearMemory,
                     )
@@ -301,31 +305,45 @@ private fun SettingsScreen(
                     }
                 }
                 FloatSetting("Criatividade", settings.personality.creativity) {
-                    onUpdate { s -> s.copy(personality = s.personality.copy(creativity = it), personalityPreset = PersonalityPreset.CUSTOM) }
+                    onUpdate { s -> s.copy(personality = s.personality.copy(creativity = it), personalityPreset = PersonalityPreset.CUSTOM, adaptation = PersonalityAdaptation()) }
                 }
                 FloatSetting("Verbosidade", settings.personality.verbosity) {
-                    onUpdate { s -> s.copy(personality = s.personality.copy(verbosity = it), personalityPreset = PersonalityPreset.CUSTOM) }
+                    onUpdate { s -> s.copy(personality = s.personality.copy(verbosity = it), personalityPreset = PersonalityPreset.CUSTOM, adaptation = PersonalityAdaptation()) }
                 }
                 FloatSetting("Empatia", settings.personality.empathy) {
-                    onUpdate { s -> s.copy(personality = s.personality.copy(empathy = it), personalityPreset = PersonalityPreset.CUSTOM) }
+                    onUpdate { s -> s.copy(personality = s.personality.copy(empathy = it), personalityPreset = PersonalityPreset.CUSTOM, adaptation = PersonalityAdaptation()) }
                 }
                 FloatSetting("Assertividade", settings.personality.assertiveness) {
-                    onUpdate { s -> s.copy(personality = s.personality.copy(assertiveness = it), personalityPreset = PersonalityPreset.CUSTOM) }
+                    onUpdate { s -> s.copy(personality = s.personality.copy(assertiveness = it), personalityPreset = PersonalityPreset.CUSTOM, adaptation = PersonalityAdaptation()) }
                 }
                 FloatSetting("Humor", settings.personality.humor) {
-                    onUpdate { s -> s.copy(personality = s.personality.copy(humor = it), personalityPreset = PersonalityPreset.CUSTOM) }
+                    onUpdate { s -> s.copy(personality = s.personality.copy(humor = it), personalityPreset = PersonalityPreset.CUSTOM, adaptation = PersonalityAdaptation()) }
                 }
                 FloatSetting("Formalidade", settings.personality.formality) {
-                    onUpdate { s -> s.copy(personality = s.personality.copy(formality = it), personalityPreset = PersonalityPreset.CUSTOM) }
+                    onUpdate { s -> s.copy(personality = s.personality.copy(formality = it), personalityPreset = PersonalityPreset.CUSTOM, adaptation = PersonalityAdaptation()) }
                 }
                 FloatSetting("Curiosidade", settings.personality.curiosity) {
-                    onUpdate { s -> s.copy(personality = s.personality.copy(curiosity = it), personalityPreset = PersonalityPreset.CUSTOM) }
+                    onUpdate { s -> s.copy(personality = s.personality.copy(curiosity = it), personalityPreset = PersonalityPreset.CUSTOM, adaptation = PersonalityAdaptation()) }
                 }
                 FloatSetting("Ceticismo", settings.personality.skepticism) {
-                    onUpdate { s -> s.copy(personality = s.personality.copy(skepticism = it), personalityPreset = PersonalityPreset.CUSTOM) }
+                    onUpdate { s -> s.copy(personality = s.personality.copy(skepticism = it), personalityPreset = PersonalityPreset.CUSTOM, adaptation = PersonalityAdaptation()) }
                 }
                 FloatSetting("Iniciativa", settings.personality.initiative) {
-                    onUpdate { s -> s.copy(personality = s.personality.copy(initiative = it), personalityPreset = PersonalityPreset.CUSTOM) }
+                    onUpdate { s -> s.copy(personality = s.personality.copy(initiative = it), personalityPreset = PersonalityPreset.CUSTOM, adaptation = PersonalityAdaptation()) }
+                }
+                Text(
+                    if (settings.adaptation.isNeutral) {
+                        "Adaptação aprendida: neutra"
+                    } else {
+                        "Adaptação aprendida ativa. Ela ajusta o estilo sem alterar o preset base."
+                    },
+                    style = MaterialTheme.typography.bodySmall,
+                )
+                OutlinedButton(
+                    onClick = { onUpdate { it.copy(adaptation = PersonalityAdaptation()) } },
+                    enabled = !settings.adaptation.isNeutral,
+                ) {
+                    Text("Zerar adaptação aprendida")
                 }
             }
         }
@@ -406,6 +424,8 @@ private fun SettingsScreen(
 @Composable
 private fun MemoryScreen(
     memories: List<MemoryRecord>,
+    sessionTurnCount: Int,
+    feedbackCount: Int,
     onRefresh: () -> Unit,
     onClear: () -> Unit,
 ) {
@@ -419,23 +439,51 @@ private fun MemoryScreen(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Column(Modifier.weight(1f)) {
-                Text("Memória local", style = MaterialTheme.typography.headlineSmall)
-                Text("${memories.size} registros", style = MaterialTheme.typography.bodySmall)
+                Text("Memória", style = MaterialTheme.typography.headlineSmall)
+                Text(
+                    "${memories.size} de longo prazo • $sessionTurnCount na sessão • $feedbackCount feedbacks",
+                    style = MaterialTheme.typography.bodySmall,
+                )
             }
             TextButton(onClick = onRefresh) { Text("Atualizar") }
-            TextButton(onClick = onClear, enabled = memories.isNotEmpty()) { Text("Limpar") }
+            TextButton(
+                onClick = onClear,
+                enabled = memories.isNotEmpty() || sessionTurnCount > 0 || feedbackCount > 0,
+            ) { Text("Limpar") }
         }
 
-        LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            items(memories, key = { it.id }) { memory ->
-                Card(Modifier.fillMaxWidth()) {
-                    Column(Modifier.padding(10.dp)) {
-                        Text(
-                            "${memory.kind.name} • ${memory.role.name}",
-                            style = MaterialTheme.typography.labelSmall,
-                            fontWeight = FontWeight.Bold,
-                        )
-                        Text(memory.text)
+        Spacer(Modifier.height(8.dp))
+        Text(
+            "Aqui aparecem apenas fatos, preferências e objetivos. Conversas recentes e feedback ficam separados.",
+            style = MaterialTheme.typography.bodySmall,
+        )
+        Spacer(Modifier.height(8.dp))
+
+        if (memories.isEmpty()) {
+            Card(Modifier.fillMaxWidth()) {
+                Column(Modifier.padding(12.dp)) {
+                    Text("Nada salvo ainda", fontWeight = FontWeight.Bold)
+                    Text("Exemplos: “meu nome é…”, “eu prefiro…” ou “meu objetivo é…”.")
+                }
+            }
+        } else {
+            LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                items(memories, key = { it.id }) { memory ->
+                    Card(Modifier.fillMaxWidth()) {
+                        Column(Modifier.padding(10.dp)) {
+                            Text(
+                                when (memory.kind) {
+                                    MemoryKind.FACT -> "Fato"
+                                    MemoryKind.PREFERENCE -> "Preferência"
+                                    MemoryKind.GOAL -> "Objetivo"
+                                    MemoryKind.CONVERSATION -> "Legado"
+                                    MemoryKind.FEEDBACK -> "Legado"
+                                },
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = FontWeight.Bold,
+                            )
+                            Text(memory.text)
+                        }
                     }
                 }
             }
@@ -452,14 +500,16 @@ private fun StatusScreen(state: MainUiState) {
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
         item {
-            Text("A25IA v0.1", style = MaterialTheme.typography.headlineSmall)
+            Text("A25IA v0.2 Memory/Context", style = MaterialTheme.typography.headlineSmall)
         }
         item {
-            StatusCard("Backend", "adaptive-local-v1")
+            StatusCard("Backend", "adaptive-local-v2")
             StatusCard("Execução", "100% local nesta baseline; sem API key e sem rede")
             StatusCard("Memória", if (state.settings.learning.memoryEnabled) "Ativa" else "Desativada")
             StatusCard("Aprendizado", if (state.settings.learning.learningEnabled) "Feedback adaptativo ativo" else "Desativado")
-            StatusCard("Registros", state.memories.size.toString())
+            StatusCard("Memória de longo prazo", state.memories.size.toString())
+            StatusCard("Contexto da sessão", state.sessionTurnCount.toString())
+            StatusCard("Feedback isolado", state.feedbackCount.toString())
         }
         item {
             Card(Modifier.fillMaxWidth()) {

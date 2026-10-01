@@ -21,8 +21,9 @@ class FeedbackAdapterTest {
     }
 
     @Test
-    fun positiveFeedbackUsesBoundedAdjustment() {
+    fun feedbackChangesOnlyBoundedAdaptationAndKeepsBasePreset() {
         val settings = AiSettings(
+            personalityPreset = PersonalityPreset.BALANCED,
             learning = LearningSettings(
                 learningEnabled = true,
                 safeAutoTune = true,
@@ -33,8 +34,10 @@ class FeedbackAdapterTest {
 
         val updated = FeedbackAdapter.adapt(settings, FeedbackSignal.POSITIVE)
 
-        assertNotEquals(settings.personality, updated.personality)
-        assertEquals(PersonalityPreset.CUSTOM, updated.personalityPreset)
-        assertTrue(updated.personality.initiative - settings.personality.initiative <= 0.02f)
+        assertEquals(settings.personality, updated.personality)
+        assertEquals(PersonalityPreset.BALANCED, updated.personalityPreset)
+        assertNotEquals(settings.adaptation, updated.adaptation)
+        assertTrue(updated.adaptation.initiativeOffset <= 0.02f)
+        assertTrue(updated.adaptation.verbosityOffset <= 0.02f)
     }
 }

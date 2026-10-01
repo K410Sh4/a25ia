@@ -12,6 +12,7 @@ import androidx.datastore.preferences.preferencesDataStore
 import dev.k410.a25ia.core.model.AiSettings
 import dev.k410.a25ia.core.model.GenerationSettings
 import dev.k410.a25ia.core.model.LearningSettings
+import dev.k410.a25ia.core.model.PersonalityAdaptation
 import dev.k410.a25ia.core.model.PersonalityPreset
 import dev.k410.a25ia.core.model.PersonalitySettings
 import java.io.IOException
@@ -57,6 +58,11 @@ class SettingsRepository(private val context: Context) {
             p[Keys.skepticism] = settings.personality.skepticism
             p[Keys.initiative] = settings.personality.initiative
 
+            p[Keys.adaptVerbosity] = settings.adaptation.verbosityOffset
+            p[Keys.adaptEmpathy] = settings.adaptation.empathyOffset
+            p[Keys.adaptSkepticism] = settings.adaptation.skepticismOffset
+            p[Keys.adaptInitiative] = settings.adaptation.initiativeOffset
+
             p[Keys.memoryEnabled] = settings.learning.memoryEnabled
             p[Keys.autoStoreFacts] = settings.learning.autoStoreFacts
             p[Keys.learningEnabled] = settings.learning.learningEnabled
@@ -76,6 +82,7 @@ class SettingsRepository(private val context: Context) {
         val defaults = AiSettings()
         val generation = defaults.generation
         val personality = defaults.personality
+        val adaptation = defaults.adaptation
         val learning = defaults.learning
 
         return AiSettings(
@@ -106,6 +113,12 @@ class SettingsRepository(private val context: Context) {
                 curiosity = p[Keys.curiosity] ?: personality.curiosity,
                 skepticism = p[Keys.skepticism] ?: personality.skepticism,
                 initiative = p[Keys.initiative] ?: personality.initiative,
+            ),
+            adaptation = PersonalityAdaptation(
+                verbosityOffset = p[Keys.adaptVerbosity] ?: adaptation.verbosityOffset,
+                empathyOffset = p[Keys.adaptEmpathy] ?: adaptation.empathyOffset,
+                skepticismOffset = p[Keys.adaptSkepticism] ?: adaptation.skepticismOffset,
+                initiativeOffset = p[Keys.adaptInitiative] ?: adaptation.initiativeOffset,
             ),
             learning = LearningSettings(
                 memoryEnabled = p[Keys.memoryEnabled] ?: learning.memoryEnabled,
@@ -145,6 +158,11 @@ class SettingsRepository(private val context: Context) {
         val curiosity = floatPreferencesKey("curiosity")
         val skepticism = floatPreferencesKey("skepticism")
         val initiative = floatPreferencesKey("initiative")
+
+        val adaptVerbosity = floatPreferencesKey("adapt_verbosity")
+        val adaptEmpathy = floatPreferencesKey("adapt_empathy")
+        val adaptSkepticism = floatPreferencesKey("adapt_skepticism")
+        val adaptInitiative = floatPreferencesKey("adapt_initiative")
 
         val memoryEnabled = booleanPreferencesKey("memory_enabled")
         val autoStoreFacts = booleanPreferencesKey("auto_store_facts")

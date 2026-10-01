@@ -51,6 +51,26 @@ data class PersonalitySettings(
     private fun Float.unit() = coerceIn(0f, 1f)
 }
 
+data class PersonalityAdaptation(
+    val verbosityOffset: Float = 0f,
+    val empathyOffset: Float = 0f,
+    val skepticismOffset: Float = 0f,
+    val initiativeOffset: Float = 0f,
+) {
+    fun normalized() = copy(
+        verbosityOffset = verbosityOffset.coerceIn(-0.25f, 0.25f),
+        empathyOffset = empathyOffset.coerceIn(-0.25f, 0.25f),
+        skepticismOffset = skepticismOffset.coerceIn(-0.25f, 0.25f),
+        initiativeOffset = initiativeOffset.coerceIn(-0.25f, 0.25f),
+    )
+
+    val isNeutral: Boolean
+        get() = verbosityOffset == 0f &&
+            empathyOffset == 0f &&
+            skepticismOffset == 0f &&
+            initiativeOffset == 0f
+}
+
 data class LearningSettings(
     val memoryEnabled: Boolean = true,
     val autoStoreFacts: Boolean = true,
@@ -76,6 +96,7 @@ data class AiSettings(
     val responseLanguage: String = "pt-BR",
     val generation: GenerationSettings = GenerationSettings(),
     val personality: PersonalitySettings = PersonalitySettings(),
+    val adaptation: PersonalityAdaptation = PersonalityAdaptation(),
     val learning: LearningSettings = LearningSettings(),
 ) {
     fun normalized() = copy(
@@ -84,8 +105,20 @@ data class AiSettings(
         responseLanguage = responseLanguage.trim().ifBlank { "pt-BR" }.take(16),
         generation = generation.normalized(),
         personality = personality.normalized(),
+        adaptation = adaptation.normalized(),
         learning = learning.normalized(),
     )
+
+    fun effectivePersonality(): PersonalitySettings {
+        val base = personality.normalized()
+        val learned = adaptation.normalized()
+        return base.copy(
+            verbosity = (base.verbosity + learned.verbosityOffset).coerceIn(0f, 1f),
+            empathy = (base.empathy + learned.empathyOffset).coerceIn(0f, 1f),
+            skepticism = (base.skepticism + learned.skepticismOffset).coerceIn(0f, 1f),
+            initiative = (base.initiative + learned.initiativeOffset).coerceIn(0f, 1f),
+        )
+    }
 
     companion object {
         const val DEFAULT_SYSTEM_INSTRUCTION =
@@ -151,7 +184,11 @@ enum class PersonalityPreset(val label: String) {
             )
             CUSTOM -> base.personality
         }
-        return base.copy(personalityPreset = this, personality = profile)
+        return base.copy(
+            personalityPreset = this,
+            personality = profile,
+            adaptation = PersonalityAdaptation(),
+        )
     }
 }
 

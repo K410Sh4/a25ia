@@ -1,49 +1,74 @@
-# Arquitetura A25IA v0.1
+# Arquitetura A25IA — Memory/Context V2
 
-## Objetivo
+## Pipeline
 
-Manter separadas cinco responsabilidades:
+~~~text
+Mensagem
+  ↓
+IntentClassifier
+  ↓
+SessionMemory ─────────────┐
+LongTermMemory + Ranker ───┼→ PromptAssembler
+PersonalityCompiler ───────┘
+  ↓
+InferenceBackend
+  ↓
+Resposta
+  ↓
+FeedbackStore
+~~~
 
-1. UI;
-2. estado/configuração;
-3. memória;
-4. orquestração;
-5. inferência.
+## SessionMemory
 
-## Contrato de inferência
+Contém apenas o contexto recente da conversa atual. Possui limite de turnos e não é persistida como memória de longo prazo.
 
-`InferenceBackend` é o limite arquitetural entre o produto Android e o motor cognitivo.
+## LongTermMemory
 
-Um backend futuro deve receber `InferenceRequest` e devolver `InferenceResult`. Isso impede que um runtime de IA contamine UI, persistência ou memória com APIs específicas.
+Contém somente:
+- FACT;
+- PREFERENCE;
+- GOAL.
 
-## Memória
+A gravação é feita por upsert usando uma chave estável. Exemplo: alterar "meu nome é X" substitui a memória identity:name anterior em vez de criar duplicatas.
 
-A memória v0.1 é local e privada ao app. O ranking usa:
+Na migração v0.1 → v0.2, somente registros FACT legados são preservados. Conversas e feedback legados não voltam para o contexto.
 
-- sobreposição lexical;
-- importância;
-- recência.
+## Recuperação
 
-É propositalmente simples e mensurável. Embeddings não foram adicionados sem benchmark.
+O MemoryRanker:
+1. normaliza texto;
+2. remove stopwords;
+3. calcula similaridade lexical normalizada;
+4. descarta candidatos abaixo do threshold;
+5. combina similaridade, importância e recência;
+6. limita a quantidade final.
 
-## Aprendizado
+Assim, recência sozinha não faz uma memória irrelevante entrar no prompt.
 
-O feedback não altera código nem executa patches.
+## Feedback
 
-Ele ajusta somente parâmetros explicitamente permitidos, usando:
+Feedback é armazenado em JsonFeedbackStore e não participa diretamente do contexto.
 
-`passo = min(learningRate, maxAdjustmentPerFeedback)`
+O autoajuste modifica PersonalityAdaptation. PersonalitySettings e PersonalityPreset continuam representando a escolha explícita do usuário.
 
-e todos os valores passam por `normalized()`.
+## Personalidade
 
-## Segurança
+PersonalityCompiler transforma o perfil efetivo em instruções textuais para que um futuro LLM receba comportamento claro em vez de números crus.
 
-- nenhuma chave ou token;
-- nenhuma permissão de rede;
-- cleartext desativado;
-- dados no armazenamento privado;
-- limites explícitos para todos os parâmetros adaptativos.
+## Intenção
+
+A ordem de classificação prioriza memória, identidade e configuração antes de saudação. Isso corrige casos compostos como:
+
+"oi quem é você?" → IDENTITY
 
 ## Próximo limite arquitetural
 
-Adicionar um backend neural local sem modificar o contrato `InferenceBackend`, seguido de A/B contra `adaptive-local-v1`.
+InferenceBackend será expandido para:
+- load/unload;
+- streaming;
+- cancelamento;
+- capabilities;
+- health;
+- métricas de inferência.
+
+Isso será feito antes de integrar o primeiro runtime neural.

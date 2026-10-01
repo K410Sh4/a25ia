@@ -1,51 +1,53 @@
 # A25IA
 
-A25IA é um projeto Android de IA pessoal adaptativa com foco inicial em execução local, memória persistente, personalização profunda e evolução verificável.
+A25IA é um projeto Android de IA pessoal adaptativa com foco em execução local, memória controlada, personalização profunda e evolução verificável.
 
-## Estado atual — v0.1 alpha
+## Estado atual — v0.2 Memory/Context
 
-A baseline implementa:
+A baseline atual implementa:
 
 - chat local;
-- núcleo cognitivo determinístico (`adaptive-local-v1`);
-- interface `InferenceBackend` para troca futura por um modelo neural local;
-- memória persistente no armazenamento privado do aplicativo;
-- recuperação de memória por relevância + recência + importância;
-- extração conservadora de fatos explícitos;
-- feedback positivo/negativo;
-- autoajuste limitado e normalizado;
-- perfis de personalidade;
-- edição completa de parâmetros de geração e personalidade;
-- DataStore para configurações;
-- tela de diagnóstico/status;
-- testes unitários;
-- CI com testes, Android Lint e build do APK de debug.
+- backend determinístico `adaptive-local-v2`;
+- interface `InferenceBackend` para um LLM neural futuro;
+- sessão temporária separada de memória de longo prazo;
+- memória persistente apenas para fatos, preferências e objetivos;
+- feedback persistido fora do contexto do modelo;
+- migração conservadora da memória v0.1;
+- ranking com stopwords, threshold de relevância, importância e recência;
+- deduplicação/upsert por chave semântica;
+- `IntentClassifier` com prioridade corrigida;
+- `PersonalityCompiler`;
+- personalidade base separada da adaptação aprendida;
+- parâmetros completos editáveis;
+- testes de regressão;
+- CI com testes, Android Lint e build do APK.
 
-## O que esta versão NÃO afirma
+## Problemas corrigidos a partir da v0.1
 
-O backend incluído **não é um LLM** e não tenta fingir conhecimento generativo amplo. Ele é a baseline verificável do sistema adaptativo: memória, feedback, parâmetros, persistência, UI e contratos de inferência.
+- perguntas sobre um tema não recebem mais conversas antigas irrelevantes apenas por recência;
+- respostas completas do assistente deixam de ser memória permanente;
+- feedback deixa de entrar no prompt;
+- "oi quem é você?" é tratado como identidade, não só como saudação;
+- 👍/👎 não troca mais o preset visual para Personalizada;
+- memória deixa de crescer dois registros por turno;
+- a UI de memória mostra somente conteúdo de longo prazo útil.
 
-O próximo backend neural deverá implementar `InferenceBackend` e só substituir a baseline depois de comparação objetiva no dispositivo.
+## Memória V2
 
-## Parâmetros editáveis
+~~~text
+SessionMemory
+  contexto recente, temporário e limitado
 
-### Identidade
-- nome da IA;
-- idioma;
-- instrução do sistema.
+LongTermMemory
+  FACT / PREFERENCE / GOAL
 
-### Geração
-- temperature;
-- top-p;
-- top-k;
-- máximo de tokens;
-- contexto;
-- repetition penalty;
-- presence penalty;
-- frequency penalty;
-- seed.
+FeedbackStore
+  avaliações separadas; não entram no prompt
+~~~
 
-### Personalidade
+## Personalidade
+
+O usuário continua controlando:
 - criatividade;
 - verbosidade;
 - empatia;
@@ -56,58 +58,13 @@ O próximo backend neural deverá implementar `InferenceBackend` e só substitui
 - ceticismo;
 - iniciativa.
 
-Presets: Equilibrada, Técnica, Criativa, Direta, Amigável e Personalizada.
+Feedback altera somente offsets limitados de adaptação. O preset base permanece sob controle do usuário.
 
-### Aprendizado
-- memória;
-- extração automática de fatos;
-- aprendizado por feedback;
-- autoajuste seguro;
-- learning rate;
-- ajuste máximo por feedback;
-- quantidade de memórias recuperadas;
-- limite total de memórias.
+## Próxima etapa
 
-## Arquitetura
-
-~~~
-UI / Compose
-     |
-MainViewModel
-     |
-AiOrchestrator
-  /       \
-Memory   InferenceBackend
-Store         |
-          LocalAdaptiveBackend
-          (substituível)
-     |
-SettingsRepository / DataStore
-~~~
-
-O backend de inferência não possui dependência da interface. Isso permite comparar LiteRT, ExecuTorch ou outro runtime sem reconstruir memória, configurações ou UI.
-
-## Build
-
-Requisitos de baseline:
-
-- JDK 17
-- Gradle 9.6
-- Android Gradle Plugin 9.4
-- Android SDK 36.1
-
-No CI, o Gradle é instalado pela action oficial e o pipeline executa:
-
-~~~
-testDebugUnitTest
-      ↓
-lintDebug
-      ↓
-assembleDebug
-      ↓
-APK artifact
-~~~
-
-## Princípio de evolução
-
-Nenhum autoajuste pode ultrapassar os limites normalizados definidos por `AiSettings`. Mudanças de arquitetura, runtime ou modelo devem ser medidas antes/depois e acompanhadas de testes de regressão.
+Antes do primeiro LLM neural:
+1. evoluir `InferenceBackend` para streaming/cancelamento/capabilities;
+2. criar ModelManager;
+3. criar DeviceCapabilityProbe;
+4. criar BenchmarkHarness;
+5. testar o mesmo modelo em runtimes locais concorrentes no Galaxy A25 5G.

@@ -1,34 +1,35 @@
 # Validação
 
-## Cobertura implementada
+## Regressões cobertas no Memory/Context V2
 
 Os testes unitários verificam:
 
-- normalização/clamp de configurações;
-- ranking de memória;
-- limite de adaptação por feedback;
-- extração explícita de fatos.
+- clamp das configurações e offsets aprendidos;
+- identidade vencendo saudação em "oi quem é você?";
+- perguntas de memória vencendo pergunta genérica;
+- uma pergunta sobre o sol não recuperando memórias sobre água/nuvens;
+- ranking de memória relevante;
+- extração estruturada de nome, preferência e objetivo;
+- feedback preservando preset e personalidade base;
+- limite do contexto de sessão.
 
-## CI
+## CI obrigatório
 
-O workflow `.github/workflows/ci.yml` exige:
+O workflow .github/workflows/ci.yml exige:
 
 1. testes unitários;
 2. Android Lint com warnings tratados como erro;
 3. build debug;
-4. publicação do APK como artifact da execução.
+4. publicação do APK como artifact.
 
-## Ainda requer dispositivo real
+## Requer validação no aparelho
 
-Não declarar como validado sem medição no Galaxy A25 5G:
+Ainda precisa ser medido no Galaxy A25 5G:
 
+- migração de dados de uma instalação v0.1 real;
+- UX da tela Memória V2;
+- uso de RAM em sessão longa;
+- estabilidade com centenas de memórias úteis;
 - temperatura;
 - bateria;
-- RAM de pico;
-- latência de UI em sessões longas;
-- estabilidade após centenas/milhares de memórias;
-- runtime neural;
-- tokens/s;
-- TTFT.
-
-Esses itens formam a baseline de dispositivo da próxima etapa.
+- TTFT e tokens/s quando o backend neural existir.

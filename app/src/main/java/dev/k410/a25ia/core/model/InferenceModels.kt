@@ -3,6 +3,8 @@ package dev.k410.a25ia.core.model
 data class InferenceRequest(
     val userMessage: String,
     val settings: AiSettings,
+    val intent: UserIntent,
+    val sessionContext: List<SessionTurn>,
     val memories: List<MemoryRecord>,
 )
 
@@ -16,4 +18,13 @@ data class InferenceResult(
 enum class FeedbackSignal {
     POSITIVE,
     NEGATIVE,
+}
+
+enum class UserIntent {
+    IDENTITY,
+    MEMORY,
+    CONFIGURATION,
+    GREETING,
+    QUESTION,
+    STATEMENT,
 }

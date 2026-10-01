@@ -1,53 +1,73 @@
 package dev.k410.a25ia.core.engine
 
 import dev.k410.a25ia.core.model.AiSettings
+import dev.k410.a25ia.core.model.FeedbackRecord
 import dev.k410.a25ia.core.model.FeedbackSignal
 import dev.k410.a25ia.core.model.InferenceRequest
 import dev.k410.a25ia.core.model.InferenceResult
-import dev.k410.a25ia.core.model.MemoryKind
 import dev.k410.a25ia.core.model.MemoryRecord
 import dev.k410.a25ia.core.model.MemoryRole
+import dev.k410.a25ia.core.model.MemorySnapshot
+import dev.k410.a25ia.core.model.UserIntent
+import dev.k410.a25ia.data.FeedbackStore
 import dev.k410.a25ia.data.MemoryStore
 import java.util.UUID
 
 class AiOrchestrator(
     private val backend: InferenceBackend,
     private val memoryStore: MemoryStore,
+    private val feedbackStore: FeedbackStore,
+    private val sessionMemory: SessionMemory,
 ) {
     suspend fun respond(message: String, settings: AiSettings): InferenceResult {
         val normalized = settings.normalized()
-        val relevant = if (normalized.learning.memoryEnabled) {
-            MemoryRanker.rank(
-                query = message,
-                memories = memoryStore.all(),
+        val intent = IntentClassifier.classify(message)
+        val longTerm = if (normalized.learning.memoryEnabled) memoryStore.all() else emptyList()
+
+        val relevant = when {
+            !normalized.learning.memoryEnabled -> emptyList()
+            intent == UserIntent.MEMORY -> MemoryRanker.overview(
+                memories = longTerm,
                 limit = normalized.learning.memoryRetrievalCount,
             )
-        } else {
-            emptyList()
+            else -> MemoryRanker.rank(
+                query = message,
+                memories = longTerm,
+                limit = normalized.learning.memoryRetrievalCount,
+            )
         }
+
+        val sessionContext = sessionMemory.snapshot(normalized.generation.contextMessages)
 
         val result = backend.generate(
             InferenceRequest(
                 userMessage = message,
                 settings = normalized,
+                intent = intent,
+                sessionContext = sessionContext,
                 memories = relevant,
             ),
         )
 
-        if (normalized.learning.memoryEnabled) {
-            storeConversation(message, result.text, normalized)
-            if (normalized.learning.autoStoreFacts) {
-                FactExtractor.extract(message).forEach { fact ->
-                    memoryStore.add(
-                        record = record(
-                            kind = MemoryKind.FACT,
-                            role = MemoryRole.USER,
-                            text = fact,
-                            importance = 0.9f,
-                        ),
-                        limit = normalized.learning.memoryLimit,
-                    )
-                }
+        val sessionLimit = (normalized.generation.contextMessages * 2).coerceIn(4, 128)
+        sessionMemory.append(MemoryRole.USER, message, sessionLimit)
+        sessionMemory.append(MemoryRole.ASSISTANT, result.text, sessionLimit)
+
+        if (normalized.learning.memoryEnabled && normalized.learning.autoStoreFacts) {
+            FactExtractor.extract(message).forEach { extracted ->
+                val now = System.currentTimeMillis()
+                memoryStore.upsert(
+                    record = MemoryRecord(
+                        id = UUID.randomUUID().toString(),
+                        key = extracted.key,
+                        createdAtEpochMs = now,
+                        updatedAtEpochMs = now,
+                        kind = extracted.kind,
+                        text = extracted.text,
+                        importance = extracted.importance,
+                    ),
+                    limit = normalized.learning.memoryLimit,
+                )
             }
         }
 
@@ -60,47 +80,33 @@ class AiOrchestrator(
         settings: AiSettings,
     ): AiSettings {
         val updated = FeedbackAdapter.adapt(settings, signal)
-        if (settings.learning.memoryEnabled) {
-            memoryStore.add(
-                record = record(
-                    kind = MemoryKind.FEEDBACK,
-                    role = MemoryRole.SYSTEM,
-                    text = "${signal.name}: ${responseText.take(240)}",
-                    importance = 0.65f,
-                ),
-                limit = settings.learning.memoryLimit,
-            )
-        }
+
+        feedbackStore.add(
+            FeedbackRecord(
+                id = UUID.randomUUID().toString(),
+                createdAtEpochMs = System.currentTimeMillis(),
+                signal = signal,
+                responseSummary = responseText
+                    .replace(Regex("\\s+"), " ")
+                    .trim()
+                    .take(180),
+                personalityPreset = settings.personalityPreset,
+            ),
+        )
+
         return updated
     }
 
-    suspend fun memories(): List<MemoryRecord> =
-        memoryStore.all().sortedByDescending { it.createdAtEpochMs }
-
-    suspend fun clearMemory() = memoryStore.clear()
-
-    private suspend fun storeConversation(user: String, assistant: String, settings: AiSettings) {
-        memoryStore.add(
-            record(MemoryKind.CONVERSATION, MemoryRole.USER, user, 0.50f),
-            settings.learning.memoryLimit,
+    suspend fun memorySnapshot(): MemorySnapshot =
+        MemorySnapshot(
+            longTermMemories = memoryStore.all().sortedByDescending { it.updatedAtEpochMs },
+            sessionTurnCount = sessionMemory.size(),
+            feedbackCount = feedbackStore.count(),
         )
-        memoryStore.add(
-            record(MemoryKind.CONVERSATION, MemoryRole.ASSISTANT, assistant, 0.40f),
-            settings.learning.memoryLimit,
-        )
+
+    suspend fun clearMemory() {
+        memoryStore.clear()
+        feedbackStore.clear()
+        sessionMemory.clear()
     }
-
-    private fun record(
-        kind: MemoryKind,
-        role: MemoryRole,
-        text: String,
-        importance: Float,
-    ) = MemoryRecord(
-        id = UUID.randomUUID().toString(),
-        createdAtEpochMs = System.currentTimeMillis(),
-        kind = kind,
-        role = role,
-        text = text.trim(),
-        importance = importance.coerceIn(0f, 1f),
-    )
 }

@@ -39,10 +39,12 @@ data class MainUiState(
     val messages: List<ChatMessageUi> = listOf(
         ChatMessageUi(
             role = ChatRole.SYSTEM,
-            text = "A25IA local iniciado. Memória, personalidade e aprendizado podem ser configurados.",
+            text = "A25IA local iniciado com Memory/Context V2.",
         ),
     ),
     val memories: List<MemoryRecord> = emptyList(),
+    val sessionTurnCount: Int = 0,
+    val feedbackCount: Int = 0,
     val isThinking: Boolean = false,
     val error: String? = null,
 )
@@ -124,7 +126,7 @@ class MainViewModel(
 
     fun feedback(messageId: String, signal: FeedbackSignal) {
         val message = _state.value.messages.firstOrNull { it.id == messageId } ?: return
-        if (message.role != ChatRole.ASSISTANT) return
+        if (message.role != ChatRole.ASSISTANT || message.feedback != null) return
 
         viewModelScope.launch {
             val updated = orchestrator.applyFeedback(
@@ -147,8 +149,16 @@ class MainViewModel(
 
     fun refreshMemories() {
         viewModelScope.launch {
-            runCatching { orchestrator.memories() }
-                .onSuccess { memories -> _state.update { it.copy(memories = memories) } }
+            runCatching { orchestrator.memorySnapshot() }
+                .onSuccess { snapshot ->
+                    _state.update {
+                        it.copy(
+                            memories = snapshot.longTermMemories,
+                            sessionTurnCount = snapshot.sessionTurnCount,
+                            feedbackCount = snapshot.feedbackCount,
+                        )
+                    }
+                }
         }
     }
 

@@ -11,15 +11,27 @@ object PromptAssembler {
         appendLine(request.settings.systemInstruction)
         appendLine()
 
+        appendLine("[PERSONALIDADE]")
+        appendLine(PersonalityCompiler.compile(request.settings))
+        appendLine()
+
         if (request.memories.isNotEmpty()) {
-            appendLine("[MEMÓRIA RELEVANTE]")
+            appendLine("[MEMÓRIA DE LONGO PRAZO RELEVANTE]")
             request.memories.forEach { memory ->
-                val role = when (memory.role) {
+                appendLine("- ${memory.text}")
+            }
+            appendLine()
+        }
+
+        if (request.sessionContext.isNotEmpty()) {
+            appendLine("[CONTEXTO RECENTE DA SESSÃO]")
+            request.sessionContext.forEach { turn ->
+                val role = when (turn.role) {
                     MemoryRole.USER -> "usuário"
                     MemoryRole.ASSISTANT -> "assistente"
                     MemoryRole.SYSTEM -> "sistema"
                 }
-                appendLine("- $role: ${memory.text}")
+                appendLine("- $role: ${turn.text}")
             }
             appendLine()
         }
