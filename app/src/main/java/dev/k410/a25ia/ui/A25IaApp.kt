@@ -52,7 +52,8 @@ import dev.k410.a25ia.core.model.FeedbackSignal
 import dev.k410.a25ia.core.model.MemoryRecord
 import dev.k410.a25ia.core.model.PersonalityPreset
 import dev.k410.a25ia.core.model.percentLabel
-import java.util.Locale\nimport kotlin.math.roundToInt
+import java.util.Locale
+import kotlin.math.roundToInt
 
 private enum class AppTab(val label: String) {
     CHAT("Chat"),
