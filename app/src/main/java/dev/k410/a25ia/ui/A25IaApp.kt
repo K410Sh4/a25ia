@@ -52,7 +52,7 @@ import dev.k410.a25ia.core.model.FeedbackSignal
 import dev.k410.a25ia.core.model.MemoryRecord
 import dev.k410.a25ia.core.model.PersonalityPreset
 import dev.k410.a25ia.core.model.percentLabel
-import kotlin.math.roundToInt
+import java.util.Locale\nimport kotlin.math.roundToInt
 
 private enum class AppTab(val label: String) {
     CHAT("Chat"),
@@ -528,7 +528,7 @@ private fun RangeSetting(
     range: ClosedFloatingPointRange<Float>,
     onValue: (Float) -> Unit,
 ) {
-    Text("$label: ${"%.2f".format(value)}")
+    Text("$label: ${String.format(Locale.ROOT, "%.2f", value)}")
     Slider(value = value, onValueChange = onValue, valueRange = range)
 }
 
