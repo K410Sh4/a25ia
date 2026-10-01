@@ -44,7 +44,15 @@ jobs:
         run: gradle :app:testDebugUnitTest --no-daemon --stacktrace
 
       - name: Android lint
-        run: gradle :app:lintDebug --no-daemon --stacktrace
+        run: |
+          if ! gradle :app:lintDebug --no-daemon --stacktrace; then
+            REPORT="app/build/intermediates/lint_intermediate_text_report/debug/lintReportDebug/lint-results-debug.txt"
+            if [ -f "$REPORT" ]; then
+              echo "----- FULL LINT REPORT -----"
+              cat "$REPORT"
+            fi
+            exit 1
+          fi
 
       - name: Debug build
         run: gradle :app:assembleDebug --no-daemon --stacktrace
